@@ -1,0 +1,111 @@
+name: careflow
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-careflow}
+      POSTGRES_USER: ${POSTGRES_USER:-careflow_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-careflow_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-careflow_user}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "6379:6379"
+
+  ml_service:
+    build: ../ml_service
+    restart: unless-stopped
+    env_file: ../ml_service/.env
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    env_file: ../backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+      ML_SERVICE_URL: http://ml_service:8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ml_service:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  celery_worker:
+    build: ../backend
+    restart: unless-stopped
+    command: celery -A careflow_project worker -l info
+    env_file: ../backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+      ML_SERVICE_URL: http://ml_service:8001
+    entrypoint: []
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  celery_beat:
+    build: ../backend
+    restart: unless-stopped
+    command: celery -A careflow_project beat -l info
+    env_file: ../backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+      ML_SERVICE_URL: http://ml_service:8001
+    entrypoint: []
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ../frontend
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_WS_BASE_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:

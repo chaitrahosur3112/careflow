@@ -1,0 +1,15 @@
+{
+  "wait_time": {
+    "mae": 3.41,
+    "rmse": 4.3,
+    "r2": 0.992,
+    "test_samples": 1200
+  },
+  "overcrowding_risk": {
+    "mae": 2.82,
+    "rmse": 3.59,
+    "r2": 0.922,
+    "test_samples": 1726
+  },
+  "model_version": "v1"
+}
