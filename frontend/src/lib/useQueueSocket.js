@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-const WS_BASE = import.meta.env.VITE_WS_BASE_URL || (
-  window.location.protocol === 'https:' ? 'wss://' : 'ws://'
-) + window.location.host
+const rawWsBase = import.meta.env.VITE_WS_BASE_URL || (
+  (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host
+)
+const WS_BASE = rawWsBase.replace(/\/+$/, '')
 
 /**
  * Subscribes to the Django Channels live-queue feed for a department.
@@ -15,20 +16,54 @@ export default function useQueueSocket(departmentId, onUpdate) {
   useEffect(() => {
     if (!departmentId) return undefined
 
-    const url = `${WS_BASE}/ws/queue-updates/${departmentId}/`
-    const socket = new WebSocket(url)
-    socketRef.current = socket
+    let isSubscribed = true
+    let retryTimer = null
 
-    socket.onmessage = (event) => {
+    function connect() {
+      if (!isSubscribed) return
       try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'queue_update') onUpdate?.()
+        const url = `${WS_BASE}/ws/queue-updates/${departmentId}/`
+        const socket = new WebSocket(url)
+        socketRef.current = socket
+
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            if (data.type === 'queue_update') onUpdate?.()
+          } catch {
+            // ignore malformed frames
+          }
+        }
+
+        socket.onclose = () => {
+          if (isSubscribed) {
+            retryTimer = setTimeout(connect, 3000)
+          }
+        }
+
+        socket.onerror = () => {
+          try {
+            socket.close()
+          } catch {
+            // ignore
+          }
+        }
       } catch {
-        // ignore malformed frames
+        if (isSubscribed) {
+          retryTimer = setTimeout(connect, 5000)
+        }
       }
     }
 
-    return () => socket.close()
+    connect()
+
+    return () => {
+      isSubscribed = false
+      if (retryTimer) clearTimeout(retryTimer)
+      if (socketRef.current) {
+        socketRef.current.close()
+      }
+    }
   }, [departmentId, onUpdate])
 
   return socketRef

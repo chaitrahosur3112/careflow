@@ -19,4 +19,4 @@ EXPOSE 8000
 
 ENTRYPOINT ["./entrypoint.sh"]
 # daphne serves both HTTP and WebSocket (ASGI) — see careflow_project/asgi.py
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "careflow_project.asgi:application"]
+CMD ["sh", "-c", "daphne -b 0.0.0.0 -p ${PORT:-8000} careflow_project.asgi:application"]

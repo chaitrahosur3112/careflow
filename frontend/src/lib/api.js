@@ -2,7 +2,8 @@ import axios from 'axios'
 
 // In dev, Vite proxies /api -> the Django backend (see vite.config.js).
 // In prod, set VITE_API_BASE_URL to the deployed backend origin.
-const baseURL = import.meta.env.VITE_API_BASE_URL || '/api'
+const rawBaseURL = import.meta.env.VITE_API_BASE_URL || '/api'
+const baseURL = rawBaseURL.replace(/\/+$/, '')
 
 const api = axios.create({ baseURL })
 

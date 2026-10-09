@@ -6,6 +6,7 @@ Never hardcode credentials here.
 from datetime import timedelta
 from pathlib import Path
 from decouple import config, Csv
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -14,7 +15,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 SECRET_KEY = config("DJANGO_SECRET_KEY", default="dev-only-insecure-key-change-me")
 DEBUG = config("DJANGO_DEBUG", default=True, cast=bool)
-ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
+ALLOWED_HOSTS = config(
+    "DJANGO_ALLOWED_HOSTS",
+    default="localhost,127.0.0.1,.onrender.com",
+    cast=Csv(),
+)
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -45,6 +50,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",  # must sit above CommonMiddleware
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -78,16 +84,26 @@ ASGI_APPLICATION = "careflow_project.asgi.application"
 # ---------------------------------------------------------------------------
 # Database (PostgreSQL)
 # ---------------------------------------------------------------------------
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("POSTGRES_DB", default="careflow"),
-        "USER": config("POSTGRES_USER", default="careflow_user"),
-        "PASSWORD": config("POSTGRES_PASSWORD", default="careflow_pass"),
-        "HOST": config("POSTGRES_HOST", default="localhost"),
-        "PORT": config("POSTGRES_PORT", default="5432"),
+DATABASE_URL = config("DATABASE_URL", default="")
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("POSTGRES_DB", default="careflow"),
+            "USER": config("POSTGRES_USER", default="careflow_user"),
+            "PASSWORD": config("POSTGRES_PASSWORD", default="careflow_pass"),
+            "HOST": config("POSTGRES_HOST", default="localhost"),
+            "PORT": config("POSTGRES_PORT", default="5432"),
+        }
+    }
 
 # ---------------------------------------------------------------------------
 # Custom user model
@@ -137,50 +153,69 @@ SIMPLE_JWT = {
 }
 
 # ---------------------------------------------------------------------------
-# CORS — whitelist the React frontend origin only
+# CORS & CSRF — whitelist frontend origins
 # ---------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
     default="http://localhost,http://127.0.0.1,http://localhost:5173,http://localhost:3000",
     cast=Csv(),
 )
+CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=False, cast=bool)
 CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS",
+    default="https://*.onrender.com,http://localhost:5173,http://localhost:3000",
+    cast=Csv(),
+)
 
 # ---------------------------------------------------------------------------
 # Redis / Celery / Channels
 # ---------------------------------------------------------------------------
-REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+REDIS_URL = config("REDIS_URL", default="")
 
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-CELERY_BEAT_SCHEDULE = {
-    "recompute-predictions-every-5-minutes": {
-        "task": "apps.predictions.tasks.recompute_all_predictions",
-        "schedule": 300.0,
-    },
-}
-
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {"hosts": [REDIS_URL]},
+if REDIS_URL:
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+    CELERY_ACCEPT_CONTENT = ["json"]
+    CELERY_TASK_SERIALIZER = "json"
+    CELERY_TIMEZONE = "UTC"
+    CELERY_BEAT_SCHEDULE = {
+        "recompute-predictions-every-5-minutes": {
+            "task": "apps.predictions.tasks.recompute_all_predictions",
+            "schedule": 300.0,
+        },
     }
-}
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        }
+    }
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+        }
+    }
+else:
+    # Safe in-memory fallback for environments without an active Redis instance
+    CELERY_BROKER_URL = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "careflow-locmem-cache",
+        }
+    }
 
 # ML microservice base URL (FastAPI)
 ML_SERVICE_URL = config("ML_SERVICE_URL", default="http://localhost:8001")
-
-# Shared cache backend (required by django-ratelimit for rate limiting to work
-# correctly across worker processes — locmem is per-process and not shared)
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": REDIS_URL,
-    }
-}
 
 # ---------------------------------------------------------------------------
 # Overcrowding thresholds (shared with alerts app)
@@ -199,10 +234,19 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Silence redis cache backend warning from django-ratelimit
 SILENCED_SYSTEM_CHECKS = ["django_ratelimit.W001"]
 
-# In production, terminate TLS at Nginx and set this True via env
+# Proxy SSL header (Render terminates SSL at edge proxy)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)

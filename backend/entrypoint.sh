@@ -1,20 +1,21 @@
 #!/bin/sh
 set -e
 
-echo "Waiting for PostgreSQL at ${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}..."
+echo "Waiting for PostgreSQL database connection..."
 until python -c "
-import socket, os, sys
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(1)
+import os, sys, django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'careflow_project.settings')
+django.setup()
+from django.db import connection
 try:
-    s.connect((os.environ.get('POSTGRES_HOST', 'postgres'), int(os.environ.get('POSTGRES_PORT', 5432))))
+    connection.ensure_connection()
     sys.exit(0)
-except OSError:
+except Exception:
     sys.exit(1)
 "; do
   sleep 1
 done
-echo "PostgreSQL is up."
+echo "PostgreSQL is ready."
 
 python manage.py migrate --noinput
 

@@ -1,0 +1,213 @@
+import random
+from datetime import timedelta
+from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+
+from apps.alerts.models import Alert, AlertSeverity, AlertType
+from apps.departments.models import Department
+from apps.patients.models import Patient, PatientStatus, QueueEvent, QueueEventType, TriageLevel
+from apps.predictions.models import Prediction, PredictionMetric
+from apps.staff.models import StaffShift
+
+User = get_user_model()
+
+DEPARTMENTS = [
+    {"name": "Emergency", "total_beds": 20, "occupied_beds": 14},
+    {"name": "Cardiology", "total_beds": 15, "occupied_beds": 6},
+    {"name": "Pediatrics", "total_beds": 12, "occupied_beds": 9},
+    {"name": "Orthopedics", "total_beds": 10, "occupied_beds": 3},
+]
+
+TRIAGE_WEIGHTS = [(TriageLevel.P1_CRITICAL, 0.15), (TriageLevel.P2_URGENT, 0.45), (TriageLevel.P3_STANDARD, 0.40)]
+
+
+def weighted_triage():
+    return random.choices([t for t, _ in TRIAGE_WEIGHTS], weights=[w for _, w in TRIAGE_WEIGHTS])[0]
+
+
+class Command(BaseCommand):
+    help = "Safely and idempotently seed demo synthetic data for CareFlow (Departments, Staff, Patients, Predictions, Alerts)"
+
+    def handle(self, *args, **options):
+        random.seed(42)
+        self.stdout.write("Seeding synthetic CareFlow demo data...")
+
+        # 1. Departments
+        depts = {}
+        for d in DEPARTMENTS:
+            dept, _ = Department.objects.update_or_create(name=d["name"], defaults=d)
+            depts[d["name"]] = dept
+        self.stdout.write(self.style.SUCCESS(f"Departments ready: {list(depts.keys())}"))
+
+        # 2. Users
+        User.objects.filter(username__endswith="(seed)").delete()
+
+        admin = User.objects.create_user(
+            username="admin(seed)", email="admin.seed@careflow.demo", password="CareFlow!2026",
+            role="ADMIN", first_name="Asha", last_name="Rao",
+        )
+
+        doctors = [
+            User.objects.create_user(
+                username=f"dr.{n.lower()}(seed)", email=f"{n.lower()}.seed@careflow.demo", password="CareFlow!2026",
+                role="DOCTOR", first_name=n, last_name="Menon", department=depts[dept_name],
+            )
+            for n, dept_name in [("Vikram", "Emergency"), ("Priya", "Cardiology")]
+        ]
+
+        nurses = [
+            User.objects.create_user(
+                username=f"nurse.{n.lower()}(seed)", email=f"{n.lower()}.seed@careflow.demo", password="CareFlow!2026",
+                role="NURSE", first_name=n, last_name="Kumar", department=depts[dept_name],
+            )
+            for n, dept_name in [("Divya", "Emergency"), ("Farah", "Pediatrics"), ("Ganesh", "Orthopedics")]
+        ]
+
+        User.objects.create_user(
+            username="hospitaladmin(seed)", email="hospitaladmin.seed@careflow.demo", password="CareFlow!2026",
+            role="HOSPITAL_ADMINISTRATOR", first_name="Neha", last_name="Iyer",
+        )
+
+        self.stdout.write(self.style.SUCCESS(
+            f"Users seeded: 1 admin, {len(doctors)} doctors, {len(nurses)} nurses, 1 hospital administrator "
+            "(Password: CareFlow!2026)"
+        ))
+
+        # 3. Shifts
+        now = timezone.now()
+        for staff_member in doctors + nurses:
+            StaffShift.objects.create(
+                staff_member=staff_member,
+                department=staff_member.department,
+                shift_start=now - timedelta(hours=2),
+                shift_end=now + timedelta(hours=6),
+                is_on_duty=True,
+            )
+        self.stdout.write(self.style.SUCCESS(f"Shifts seeded for {len(doctors) + len(nurses)} staff members"))
+
+        # 4. Patients
+        Patient.objects.filter(department__in=depts.values()).delete()
+        created_patients = 0
+        for dept_name, dept in depts.items():
+            dept_nurses = [n for n in nurses if n.department_id == dept.id] or [admin]
+            for _ in range(random.randint(6, 12)):
+                status = random.choices(
+                    [PatientStatus.WAITING, PatientStatus.IN_TREATMENT, PatientStatus.DISCHARGED],
+                    weights=[0.4, 0.3, 0.3],
+                )[0]
+                intake_offset = timedelta(minutes=random.randint(5, 240))
+                nurse = random.choice(dept_nurses)
+
+                patient = Patient.objects.create(
+                    triage_level=weighted_triage(),
+                    department=dept,
+                    status=status,
+                    assigned_nurse=nurse,
+                )
+                patient.intake_time = now - intake_offset
+                if status == PatientStatus.DISCHARGED:
+                    patient.discharge_time = patient.intake_time + timedelta(minutes=random.randint(20, 120))
+                patient.save(update_fields=["intake_time", "discharge_time"])
+
+                QueueEvent.objects.create(
+                    patient=patient, event_type=QueueEventType.INTAKE, performed_by=nurse,
+                    timestamp=patient.intake_time,
+                )
+                if status != PatientStatus.WAITING:
+                    QueueEvent.objects.create(
+                        patient=patient, event_type=QueueEventType.STATUS_CHANGE, performed_by=nurse,
+                        notes=f"status -> {status}",
+                    )
+                if status == PatientStatus.DISCHARGED:
+                    QueueEvent.objects.create(
+                        patient=patient, event_type=QueueEventType.DISCHARGE, performed_by=nurse,
+                        timestamp=patient.discharge_time,
+                    )
+                created_patients += 1
+
+        self.stdout.write(self.style.SUCCESS(f"Patients seeded: {created_patients} across {len(depts)} departments"))
+
+        # 5. Historical Predictions
+        Prediction.objects.filter(department__in=depts.values()).delete()
+        created_preds = 0
+        for dept_name, dept in depts.items():
+            for _ in range(12):
+                pred_val = round(random.uniform(15.0, 50.0), 1)
+                actual_val = round(max(5.0, pred_val + random.uniform(-4.0, 4.0)), 1)
+                p = Prediction.objects.create(
+                    department=dept,
+                    metric=PredictionMetric.WAIT_TIME,
+                    predicted_value=pred_val,
+                    actual_value=actual_val,
+                    model_version="v1",
+                )
+                p.predicted_at = now - timedelta(hours=random.randint(2, 72))
+                p.save(update_fields=["predicted_at"])
+                created_preds += 1
+
+            for _ in range(12):
+                pred_risk = round(random.uniform(40.0, 95.0), 1)
+                actual_risk = round(max(10.0, min(100.0, pred_risk + random.uniform(-5.0, 5.0))), 1)
+                p = Prediction.objects.create(
+                    department=dept,
+                    metric=PredictionMetric.OVERCROWDING_RISK,
+                    predicted_value=pred_risk,
+                    actual_value=actual_risk,
+                    model_version="v1",
+                )
+                p.predicted_at = now - timedelta(hours=random.randint(2, 72))
+                p.save(update_fields=["predicted_at"])
+                created_preds += 1
+
+        self.stdout.write(self.style.SUCCESS(f"Predictions seeded: {created_preds} historical records"))
+
+        # 6. Alerts
+        Alert.objects.filter(department__in=depts.values()).delete()
+        alerts_data = [
+            {
+                "department": depts["Emergency"],
+                "alert_type": AlertType.OVERCROWDING,
+                "severity": AlertSeverity.RED,
+                "message": "Emergency at 95% bed occupancy — critical.",
+                "acknowledged_at": None,
+                "acknowledged_by": None,
+                "offset_hours": 1,
+            },
+            {
+                "department": depts["Pediatrics"],
+                "alert_type": AlertType.OVERCROWDING,
+                "severity": AlertSeverity.AMBER,
+                "message": "Pediatrics at 82% bed occupancy — approaching capacity.",
+                "acknowledged_at": None,
+                "acknowledged_by": None,
+                "offset_hours": 2,
+            },
+            {
+                "department": depts["Emergency"],
+                "alert_type": AlertType.LONG_WAIT,
+                "severity": AlertSeverity.AMBER,
+                "message": "Patient wait time exceeded 60 min threshold in Emergency.",
+                "acknowledged_at": None,
+                "acknowledged_by": None,
+                "offset_hours": 3,
+            },
+            {
+                "department": depts["Cardiology"],
+                "alert_type": AlertType.OVERCROWDING,
+                "severity": AlertSeverity.AMBER,
+                "message": "Cardiology approached capacity (resolved).",
+                "acknowledged_at": now - timedelta(minutes=45),
+                "acknowledged_by": admin,
+                "offset_hours": 4,
+            },
+        ]
+
+        for a in alerts_data:
+            offset = a.pop("offset_hours")
+            alert = Alert.objects.create(**a)
+            alert.created_at = now - timedelta(hours=offset)
+            alert.save(update_fields=["created_at"])
+
+        self.stdout.write(self.style.SUCCESS(f"Alerts seeded: {len(alerts_data)} alerts (active and acknowledged)"))
+        self.stdout.write(self.style.SUCCESS("CareFlow demo seed completed successfully!"))
