@@ -1,9 +1,10 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.patients.models import Patient
-from apps.patients.permissions import IsAdmin, IsAdminOrDoctorOrNurse, IsHospitalAdministrator
+from apps.patients.permissions import IsAdminOrDoctorOrNurse
 from apps.patients.serializers import PatientSerializer
 from .models import Department
 from .serializers import DepartmentSerializer, DepartmentStatsSerializer
@@ -52,7 +53,7 @@ class DepartmentStatsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk):
-        dept = Department.objects.get(pk=pk)
+        dept = get_object_or_404(Department, pk=pk)
         data = {
             "id": dept.id,
             "name": dept.name,

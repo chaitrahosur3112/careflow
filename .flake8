@@ -1,0 +1,16 @@
+[flake8]
+max-line-length = 127
+exclude =
+    .git,
+    __pycache__,
+    venv,
+    .venv,
+    */venv/*,
+    */.venv/*,
+    staticfiles,
+    backend/staticfiles,
+    dist,
+    node_modules,
+    */node_modules/*,
+    */migrations/*,
+    migrations

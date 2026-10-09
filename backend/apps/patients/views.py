@@ -1,5 +1,6 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -69,7 +70,7 @@ class PatientStatusUpdateView(APIView):
     permission_classes = [IsAdminOrDoctorOrNurse]
 
     def patch(self, request, pk):
-        patient = Patient.objects.get(pk=pk)
+        patient = get_object_or_404(Patient, pk=pk)
         serializer = PatientStatusUpdateSerializer(patient, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -89,7 +90,7 @@ class PatientDischargeView(APIView):
     permission_classes = [IsAdminOrDoctorOrNurse]
 
     def post(self, request, pk):
-        patient = Patient.objects.get(pk=pk)
+        patient = get_object_or_404(Patient, pk=pk)
         patient.status = PatientStatus.DISCHARGED
         patient.discharge_time = timezone.now()
         patient.save(update_fields=["status", "discharge_time"])

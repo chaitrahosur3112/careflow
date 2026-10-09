@@ -69,7 +69,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           DJANGO_SECRET_KEY: ci-test-secret-key
         run: |
-          python manage.py makemigrations --check --dry-run || python manage.py makemigrations
+          python manage.py makemigrations --check --dry-run
           python manage.py migrate
 
       - name: Run tests

@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics
 from rest_framework.response import Response
@@ -28,7 +29,7 @@ class AlertAcknowledgeView(APIView):
     permission_classes = [IsAdminOrDoctorOrNurse]
 
     def post(self, request, pk):
-        alert = Alert.objects.get(pk=pk)
+        alert = get_object_or_404(Alert, pk=pk)
         alert.acknowledged_by = request.user
         alert.acknowledged_at = timezone.now()
         alert.save(update_fields=["acknowledged_by", "acknowledged_at"])

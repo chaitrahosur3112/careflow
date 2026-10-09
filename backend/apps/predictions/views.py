@@ -1,3 +1,4 @@
+import uuid
 import requests
 from django.conf import settings
 from rest_framework import permissions, status
@@ -12,6 +13,20 @@ from .serializers import (
 )
 
 
+def serialize_payload(payload):
+    """
+    Recursively converts UUID and other non-JSON-serializable objects into strings.
+    Prevents TypeError: Object of type UUID is not JSON serializable when sending payloads to ML service.
+    """
+    if isinstance(payload, dict):
+        return {k: serialize_payload(v) for k, v in payload.items()}
+    elif isinstance(payload, (list, tuple)):
+        return [serialize_payload(v) for v in payload]
+    elif isinstance(payload, uuid.UUID):
+        return str(payload)
+    return payload
+
+
 class BaseMLProxyView(APIView):
     """
     Shared logic for calling the FastAPI ML microservice. Any downstream
@@ -24,7 +39,8 @@ class BaseMLProxyView(APIView):
     def call_ml_service(self, payload):
         url = f"{settings.ML_SERVICE_URL}{self.ml_path}"
         try:
-            resp = requests.post(url, json=payload, timeout=5)
+            clean_payload = serialize_payload(payload)
+            resp = requests.post(url, json=clean_payload, timeout=5)
             resp.raise_for_status()
             return resp.json(), None
         except requests.RequestException as exc:

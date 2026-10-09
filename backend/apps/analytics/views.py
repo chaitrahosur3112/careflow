@@ -1,4 +1,4 @@
-from django.db.models import Avg, Count
+from django.db.models import Count
 from django.db.models.functions import ExtractHour, ExtractWeekDay, TruncDate
 from rest_framework.response import Response
 from rest_framework.views import APIView

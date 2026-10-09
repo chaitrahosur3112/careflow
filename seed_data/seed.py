@@ -33,8 +33,10 @@ django.setup()
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
+from apps.alerts.models import Alert, AlertSeverity, AlertType  # noqa: E402
 from apps.departments.models import Department  # noqa: E402
 from apps.patients.models import Patient, PatientStatus, QueueEvent, QueueEventType, TriageLevel  # noqa: E402
+from apps.predictions.models import Prediction, PredictionMetric  # noqa: E402
 from apps.staff.models import StaffShift  # noqa: E402
 
 User = get_user_model()
@@ -158,12 +160,103 @@ def seed_patients(depts, nurses, admin):
     print(f"Patients seeded: {created} across {len(depts)} departments")
 
 
+def seed_predictions(depts):
+    Prediction.objects.filter(department__in=depts.values()).delete()
+    now = timezone.now()
+    created = 0
+    for dept_name, dept in depts.items():
+        # Historical wait-time predictions with actual outcomes for analytics MAE/RMSE
+        for _ in range(12):
+            pred_val = round(random.uniform(15.0, 50.0), 1)
+            actual_val = round(max(5.0, pred_val + random.uniform(-4.0, 4.0)), 1)
+            p = Prediction.objects.create(
+                department=dept,
+                metric=PredictionMetric.WAIT_TIME,
+                predicted_value=pred_val,
+                actual_value=actual_val,
+                model_version="v1",
+            )
+            p.predicted_at = now - timedelta(hours=random.randint(2, 72))
+            p.save(update_fields=["predicted_at"])
+            created += 1
+
+        # Historical overcrowding-risk predictions with actual outcomes
+        for _ in range(12):
+            pred_risk = round(random.uniform(40.0, 95.0), 1)
+            actual_risk = round(max(10.0, min(100.0, pred_risk + random.uniform(-5.0, 5.0))), 1)
+            p = Prediction.objects.create(
+                department=dept,
+                metric=PredictionMetric.OVERCROWDING_RISK,
+                predicted_value=pred_risk,
+                actual_value=actual_risk,
+                model_version="v1",
+            )
+            p.predicted_at = now - timedelta(hours=random.randint(2, 72))
+            p.save(update_fields=["predicted_at"])
+            created += 1
+
+    print(f"Predictions seeded: {created} historical records for accuracy validation")
+
+
+def seed_alerts(depts, admin):
+    Alert.objects.filter(department__in=depts.values()).delete()
+    now = timezone.now()
+    alerts_data = [
+        {
+            "department": depts["Emergency"],
+            "alert_type": AlertType.OVERCROWDING,
+            "severity": AlertSeverity.RED,
+            "message": "Emergency at 95% bed occupancy — critical.",
+            "acknowledged_at": None,
+            "acknowledged_by": None,
+            "offset_hours": 1,
+        },
+        {
+            "department": depts["Pediatrics"],
+            "alert_type": AlertType.OVERCROWDING,
+            "severity": AlertSeverity.AMBER,
+            "message": "Pediatrics at 82% bed occupancy — approaching capacity.",
+            "acknowledged_at": None,
+            "acknowledged_by": None,
+            "offset_hours": 2,
+        },
+        {
+            "department": depts["Emergency"],
+            "alert_type": AlertType.LONG_WAIT,
+            "severity": AlertSeverity.AMBER,
+            "message": "Patient wait time exceeded 60 min threshold in Emergency.",
+            "acknowledged_at": None,
+            "acknowledged_by": None,
+            "offset_hours": 3,
+        },
+        {
+            "department": depts["Cardiology"],
+            "alert_type": AlertType.OVERCROWDING,
+            "severity": AlertSeverity.AMBER,
+            "message": "Cardiology approached capacity (resolved).",
+            "acknowledged_at": now - timedelta(minutes=45),
+            "acknowledged_by": admin,
+            "offset_hours": 4,
+        },
+    ]
+
+    for a in alerts_data:
+        offset = a.pop("offset_hours")
+        alert = Alert.objects.create(**a)
+        alert.created_at = now - timedelta(hours=offset)
+        alert.save(update_fields=["created_at"])
+
+    print(f"Alerts seeded: {len(alerts_data)} alerts (both active and acknowledged)")
+
+
 def main():
     random.seed(42)  # reproducible demo data
     depts = seed_departments()
     admin, doctors, nurses, hospital_admin = seed_users(depts)
     seed_shifts(depts, doctors, nurses)
     seed_patients(depts, nurses, admin)
+    seed_predictions(depts)
+    seed_alerts(depts, admin)
     print("\nDemo login (Admin): admin.seed@careflow.demo / CareFlow!2026")
     print("Demo login (Doctor): vikram.seed@careflow.demo / CareFlow!2026")
     print("Demo login (Nurse): divya.seed@careflow.demo / CareFlow!2026")

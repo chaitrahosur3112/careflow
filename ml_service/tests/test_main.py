@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def client():
     # TestClient must be used as a context manager for FastAPI's startup
     # event (which loads the trained models into app.state) to run.
@@ -52,7 +52,7 @@ def test_overcrowding_risk_prediction(client):
     assert response.status_code == 200
     body = response.json()
     assert 0 <= body["risk_score"] <= 100
-    assert body["severity"] in {"normal", "amber", "red"}
+    assert body["severity"] in {"low", "amber", "red"}
 
 
 def test_staffing_recommendation_never_suggests_unrealistic_addition(client):

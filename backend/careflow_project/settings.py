@@ -140,7 +140,9 @@ SIMPLE_JWT = {
 # CORS — whitelist the React frontend origin only
 # ---------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = config(
-    "CORS_ALLOWED_ORIGINS", default="http://localhost:5173,http://localhost:3000", cast=Csv()
+    "CORS_ALLOWED_ORIGINS",
+    default="http://localhost,http://127.0.0.1,http://localhost:5173,http://localhost:3000",
+    cast=Csv(),
 )
 CORS_ALLOW_CREDENTIALS = True
 
@@ -196,7 +198,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Silence redis cache backend warning from django-ratelimit
+SILENCED_SYSTEM_CHECKS = ["django_ratelimit.W001"]
 
 # In production, terminate TLS at Nginx and set this True via env
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)

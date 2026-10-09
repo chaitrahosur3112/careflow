@@ -1,31 +1,48 @@
 from rest_framework import serializers
 
+from apps.departments.models import Department
 from .models import Prediction
 
 
 class WaitTimeRequestSerializer(serializers.Serializer):
     department_id = serializers.UUIDField()
-    current_queue_length = serializers.IntegerField()
+    current_queue_length = serializers.IntegerField(min_value=0)
     triage_level = serializers.ChoiceField(choices=["P1", "P2", "P3"])
-    staff_on_duty = serializers.IntegerField()
+    staff_on_duty = serializers.IntegerField(min_value=0)
     time_of_day = serializers.IntegerField(min_value=0, max_value=23)
     day_of_week = serializers.IntegerField(min_value=0, max_value=6)
+
+    def validate_department_id(self, value):
+        if not Department.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Department does not exist.")
+        return value
 
 
 class OvercrowdingRiskRequestSerializer(serializers.Serializer):
     department_id = serializers.UUIDField()
-    admission_rate_last_1h = serializers.FloatField()
-    bed_occupancy_pct = serializers.FloatField()
+    admission_rate_last_1h = serializers.FloatField(min_value=0)
+    bed_occupancy_pct = serializers.FloatField(min_value=0, max_value=100)
     hour_of_day = serializers.IntegerField(min_value=0, max_value=23)
+
+    def validate_department_id(self, value):
+        if not Department.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Department does not exist.")
+        return value
 
 
 class StaffingRecommendationRequestSerializer(serializers.Serializer):
     department_id = serializers.UUIDField()
     current_load = serializers.FloatField(
+        min_value=0,
         help_text="Current patient queue length (count), not a percentage — matches Department.current_queue_length."
     )
-    staff_on_duty = serializers.IntegerField()
-    predicted_risk = serializers.FloatField()
+    staff_on_duty = serializers.IntegerField(min_value=0)
+    predicted_risk = serializers.FloatField(min_value=0, max_value=100)
+
+    def validate_department_id(self, value):
+        if not Department.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Department does not exist.")
+        return value
 
 
 class PredictionSerializer(serializers.ModelSerializer):

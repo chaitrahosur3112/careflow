@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -34,7 +35,7 @@ class StaffDutyStatusView(APIView):
     permission_classes = [IsAdminOrDoctorOrNurse]
 
     def patch(self, request, pk):
-        shift = StaffShift.objects.get(pk=pk)
+        shift = get_object_or_404(StaffShift, pk=pk)
         shift.is_on_duty = request.data.get("is_on_duty", shift.is_on_duty)
         shift.save(update_fields=["is_on_duty"])
         return Response(StaffShiftSerializer(shift).data)
