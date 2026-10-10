@@ -111,11 +111,10 @@ data, every endpoint hit and checked for sane output — see
   Django. YAML-validated; not run live in this environment (no Docker
   daemon available in the build sandbox) — verify with `docker compose
   up --build` on your machine.
-- `backend/entrypoint.sh` — waits for Postgres to accept connections,
-  runs migrations, optionally bootstraps an Admin account from
-  `DJANGO_SUPERUSER_EMAIL`/`DJANGO_SUPERUSER_PASSWORD`, then starts
-  Daphne. Celery worker/beat containers reuse the same image with an
-  empty entrypoint so they skip straight to their own command.
+- `backend/entrypoint.sh` waits for Postgres, runs migrations, then starts
+  Daphne. It does not create administrator accounts automatically. Use
+  `python manage.py bootstrap_admin` with a confirmed database host for
+  one-time admin setup.
 - **Real backend test suite added** (`apps/patients/tests.py`) — 8
   tests, all passing: kiosk-endpoint field-lockdown (asserts the
   response can *only* ever contain the 3 anonymized fields), RBAC
