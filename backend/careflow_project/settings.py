@@ -17,9 +17,14 @@ SECRET_KEY = config("DJANGO_SECRET_KEY", default="dev-only-insecure-key-change-m
 DEBUG = config("DJANGO_DEBUG", default=True, cast=bool)
 ALLOWED_HOSTS = config(
     "DJANGO_ALLOWED_HOSTS",
-    default="localhost,127.0.0.1,.onrender.com",
+    default="localhost,127.0.0.1",
     cast=Csv(),
 )
+# Render provides the assigned public hostname at runtime. Keeping that exact
+# host avoids trusting every tenant's *.onrender.com hostname.
+RENDER_EXTERNAL_HOSTNAME = config("RENDER_EXTERNAL_HOSTNAME", default="")
+if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -215,7 +220,11 @@ else:
     }
 
 # ML microservice base URL (FastAPI)
-ML_SERVICE_URL = config("ML_SERVICE_URL", default="http://localhost:8001")
+ML_SERVICE_URL = config("ML_SERVICE_URL", default="http://localhost:8001").rstrip("/")
+# Render's supported `hostport` service reference provides a private
+# hostname:port pair; add the HTTP scheme expected by requests.
+if "://" not in ML_SERVICE_URL:
+    ML_SERVICE_URL = f"http://{ML_SERVICE_URL}"
 
 # ---------------------------------------------------------------------------
 # Overcrowding thresholds (shared with alerts app)
