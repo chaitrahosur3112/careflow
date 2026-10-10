@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-const rawWsBase = import.meta.env.VITE_WS_BASE_URL || (
-  (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host
-)
+const configuredWsBase = import.meta.env.VITE_WS_BASE_URL
+const rawWsBase = configuredWsBase
+  ? configuredWsBase.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:')
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
 const WS_BASE = rawWsBase.replace(/\/+$/, '')
 
 /**

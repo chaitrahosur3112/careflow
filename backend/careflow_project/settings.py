@@ -199,7 +199,7 @@ if REDIS_URL:
     }
     CACHES = {
         "default": {
-            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "BACKEND": "django_redis.cache.RedisCache",
             "LOCATION": REDIS_URL,
         }
     }
@@ -252,9 +252,6 @@ STORAGES = {
     },
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# Silence redis cache backend warning from django-ratelimit
-SILENCED_SYSTEM_CHECKS = ["django_ratelimit.W001"]
 
 # Proxy SSL header (Render terminates SSL at edge proxy)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
