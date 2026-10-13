@@ -19,8 +19,17 @@ export default function Login() {
     try {
       await login(email, password)
       navigate('/dashboard')
-    } catch {
-      setError('Invalid email or password.')
+    } catch (err) {
+      const status = err.response?.status
+      if (status === 401) {
+        setError('Invalid email or password.')
+      } else if (status === 429) {
+        setError('Too many login attempts. Please wait and try again.')
+      } else if (status) {
+        setError(`Login service error (${status}). Please try again later.`)
+      } else {
+        setError('Could not reach the login service. Check your connection and try again.')
+      }
     } finally {
       setSubmitting(false)
     }

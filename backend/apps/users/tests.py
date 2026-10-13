@@ -5,6 +5,8 @@ from django.contrib.auth import get_user_model
 from django.core.management import CommandError, call_command
 from django.db import connections
 from django.test import TestCase
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 User = get_user_model()
 
@@ -82,3 +84,37 @@ class BootstrapAdminCommandTests(TestCase):
         with self.assertRaises(CommandError):
             self.run_bootstrap(password="too-short")
         self.assertFalse(User.objects.exists())
+
+
+class LoginApiTests(APITestCase):
+    def setUp(self):
+        self.password = secrets.token_urlsafe(24)
+        self.invalid_password = secrets.token_urlsafe(24)
+        self.user = User.objects.create_user(
+            username="login-admin",
+            email="login-admin@example.test",
+            password=self.password,
+            role="ADMIN",
+        )
+
+    def test_valid_email_and_password_return_jwt_tokens(self):
+        response = self.client.post(
+            "/auth/login",
+            {"email": self.user.email, "password": self.password},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+
+    def test_invalid_password_is_rejected(self):
+        response = self.client.post(
+            "/auth/login",
+            {"email": self.user.email, "password": self.invalid_password},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertNotIn("access", response.data)
+        self.assertNotIn("refresh", response.data)
